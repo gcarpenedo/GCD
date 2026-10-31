@@ -1,0 +1,338 @@
+% ===========================================================================
+%  Task 3 -- Exploring design optimizations
+% ===========================================================================
+
+% ---------------------------------------------------------------------------
+% Helpers shared by the drawings of Task 3 and Task 4.
+% The TikZ libraries are loaded in preamble.tex:
+%   \usetikzlibrary{arrows.meta,positioning,calc,automata}
+% ---------------------------------------------------------------------------
+\providecommand{\tbd}[1]{\textcolor{red}{\textbf{#1}}} % value still to be filled in
+\tikzset{
+  dp/.style={>={Stealth[round]}, line join=round},
+  bus/.style={->, very thick},                    % data bus (16/17 bits)
+  ctl/.style={->, thin},                          % 1-bit control signal
+  sig/.style={font=\scriptsize, inner sep=1.5pt}, % signal name
+  dpreg/.style={draw, thick, minimum width=14mm, minimum height=7mm, font=\small},
+  dpbox/.style={draw, thick, minimum width=12mm, minimum height=5mm, font=\scriptsize, align=center},
+  jdot/.style={circle, fill, inner sep=0pt, minimum size=1.4mm},
+  % 2-to-1 multiplexer: the left input is selected by 0, the right one by 1
+  muxd/.pic={
+    \draw[thick] (-7mm,3mm) -- (7mm,3mm) -- (4mm,-3mm) -- (-4mm,-3mm) -- cycle;
+    \node[font=\tiny, inner sep=0pt] at (-3.5mm,1.6mm) {0};
+    \node[font=\tiny, inner sep=0pt] at (3.5mm,1.6mm) {1};
+    \coordinate (-in1) at (-3.5mm,3mm);
+    \coordinate (-in2) at (3.5mm,3mm);
+    \coordinate (-out) at (0,-3mm);
+    \coordinate (-sl)  at (-5.5mm,0);
+    \coordinate (-sr)  at (5.5mm,0);
+  },
+  % 4-to-1 multiplexer: inputs selected by 00, 01, 10, 11 from left to right
+  mux4/.pic={
+    \draw[thick] (-12mm,3mm) -- (12mm,3mm) -- (6mm,-3mm) -- (-6mm,-3mm) -- cycle;
+    \foreach \x/\lab in {-9/00, -3/01, 3/10, 9/11}
+      \node[font=\tiny, inner sep=0pt] at (\x mm,1.6mm) {\lab};
+    \coordinate (-in1) at (-9mm,3mm);
+    \coordinate (-in2) at (-3mm,3mm);
+    \coordinate (-in3) at (3mm,3mm);
+    \coordinate (-in4) at (9mm,3mm);
+    \coordinate (-out) at (0,-3mm);
+    \coordinate (-sl)  at (-9mm,0);
+  },
+  % arithmetic unit (subtractor / ALU): operands on top, result at the bottom
+  aluv/.pic={
+    \draw[thick] (-11mm,4mm) -- (-2.5mm,4mm) -- (0,1.5mm) -- (2.5mm,4mm)
+      -- (11mm,4mm) -- (5.5mm,-4mm) -- (-5.5mm,-4mm) -- cycle;
+    \coordinate (-a) at (-6.5mm,4mm);
+    \coordinate (-b) at (6.5mm,4mm);
+    \coordinate (-y) at (0,-4mm);
+    \coordinate (-l) at (-8.25mm,0);
+    \coordinate (-r) at (8.25mm,0);
+    \coordinate (-c) at (0,-1mm);
+  },
+}
+% clock triangle in the bottom-left corner of a register node
+\newcommand{\dpclk}[1]{\draw ($(#1.south west)+(1mm,0)$) -- ++(1.3mm,1.6mm) -- ++(1.3mm,-1.6mm);}
+
+\section{Exploring Design Optimizations - Task 3}
+
+The FSMD implementation of Task~2 (architecture \code{fsmd}) is a direct translation of the datapath of Figure~\ref{fig:basic-fsmd}, and it leaves room for improvement in two directions:
+\begin{itemize}
+    \item \textbf{Area.} The ALU is described by a \code{case} statement on \code{FN} in which the two subtractions $A-B$ and $B-A$ appear in different branches. Since every operator written in VHDL becomes a hardware unit, the synthesized ALU contains two 17-bit subtractors followed by a 4-to-1 multiplexer (Figure~\ref{fig:t3_alu_baseline}), although only one subtraction is ever needed in a clock cycle.
+    \item \textbf{Speed.} Every iteration of Euclid's algorithm takes three clock cycles (\code{COMPUTE} $\rightarrow$ \code{CHECK\_ZERO} $\rightarrow$ \code{POS}/\code{NEG}). If a GCD requires $k$ subtraction steps, the FSM therefore spends $3k+2$ clock cycles between entering \code{COMPUTE} and reaching \code{DONE}.
+\end{itemize}
+Synthesized in Vivado, the baseline uses 69 LUTs and 36 flip-flops, and our testbench \code{gcd\_tb} (10\,000 random operand pairs in the range $[1,2^{16}-1]$, 20~ns clock period) completes after 47\,720\,260~ns of simulated time. These figures are the reference for all the variants presented below.
+
+\begin{figure}[H]
+    \centering
+    \begin{tikzpicture}[dp]
+        % the two subtractors
+        \pic (S1) at (-2.2,0) {aluv};
+        \pic (S2) at (1.6,0)  {aluv};
+        \node[sig] at (S1-c) {$A-B$};
+        \node[sig] at (S2-c) {$B-A$};
+        \draw[bus] ($(S1-a)+(0,0.5)$) node[above,sig]{A} -- (S1-a);
+        \draw[bus] ($(S1-b)+(0,0.5)$) node[above,sig]{B} -- (S1-b);
+        \draw[bus] ($(S2-a)+(0,0.5)$) node[above,sig]{B} -- (S2-a);
+        \draw[bus] ($(S2-b)+(0,0.5)$) node[above,sig]{A} -- (S2-b);
+        % 4-to-1 function multiplexer
+        \pic (MX) at (0,-2.2) {mux4};
+        \draw[bus] (S1-y) -- ++(0,-0.3) -| (MX-in1);
+        \draw[bus] (S2-y) -- ++(0,-0.3) -| (MX-in2);
+        \draw[bus] ($(MX-in3)+(0,0.6)$) node[above,sig]{A} -- (MX-in3);
+        \draw[bus] ($(MX-in4)+(0,0.6)$) node[above,sig]{B} -- (MX-in4);
+        \draw[ctl] ($(MX-sl)+(-1.2,0)$) node[left,sig]{FN[1:0]} -- (MX-sl);
+        % result and flags
+        \draw[bus] (MX-out) -- ++(0,-0.9) node[below,sig]{Y[16:0]};
+        \node[jdot] at (0,-3.0) {};
+        \node[dpbox] (FL) at (1.9,-3.0) {flags};
+        \draw[bus] (0,-3.0) -- (FL.west);
+        \draw[ctl] (FL.east) -- ++(0.6,0) node[right,sig]{Z, N};
+    \end{tikzpicture}
+    \caption{ALU of the Task~2 baseline (architecture \code{fsmd}), as inferred from its \code{case} statement.}
+    \label{fig:t3_alu_baseline}
+\end{figure}
+
+\subsection{Selected optimizations}
+
+We implemented both optimizations suggested in the assignment and, since they turned out to be compatible, also their combination. Each variant is a new architecture of the unchanged entity \code{gcd}, and \code{gcd\_top} selects the one to be used through the architecture name in the instantiation.
+
+\begin{enumerate}
+    \item \textbf{Resource optimization: operand sharing} (\code{fsmd\_resource\_optimized}). $A-B$ and $B-A$ are computed by a single subtractor whose operands are swapped by a pair of multiplexers. By removing one 17-bit subtractor, we introduce 2 swap multiplexers, which are cheap in terms of resources: each of their output bits depends on only three signals ($A_i$, $B_i$ and \code{FN(0)}), and therefore, they can share the LUTs that feed the carry chain of the subtractor. The FSM is unchanged, so neither the number of flip-flops nor the number of clock cycles should change.
+    \item \textbf{Time optimization: parallel subtractors} (\code{fsmd\_time\_optimized}). $A-B$ and $B-A$ are computed in parallel and the correct one is selected by the sign of $A-B$, so that the register update can be performed directly in \code{CHECK\_ZERO} and the states \code{POS} and \code{NEG} disappear. We expected two clock cycles per iteration instead of three ($2k+2$ in total), i.e.\ about one third fewer cycles in the computation phase, one flip-flop less in the state register (8 states instead of 10) and a slightly larger ALU, since both subtractors are kept and a result multiplexer is added.
+    \item \textbf{Combined optimization} (\code{fsmd\_res\_time\_optimized}). The two-state loop of variant~2 is kept, but both differences are computed by the single subtractor of variant~1, used in two consecutive clock cycles: the sign of $A-B$ is stored in a one-bit register and controls the operand swap in the following cycle. We expected the speed of variant~2 with an area close to that of variant~1, plus one flip-flop.
+\end{enumerate}
+
+\subsection{Implementation}
+
+\paragraph{Resource-optimized variant.}
+The first variant (\code{task3/gcd\_resources\_optimizations.vhd}) keeps the FSM of Task~2 unchanged and only rewrites the ALU. The idea comes from the encoding of Table~\ref{tab:alu_gcd}, which already separates the two aspects of the ALU function: \code{FN(0)} decides the order of the operands, and \code{FN(1)} decides whether the ALU subtracts or passes an operand. The process \code{cl\_precalc} therefore swaps the operands according to \code{FN(0)}, and \code{cl\_calc} contains the only subtraction of the design, \code{in1 - in2}, whose result is replaced by \code{RegA} when \code{FN(1)} is 1 (Figure~\ref{fig:t3_alu_res}). The function \code{FN = 11} (pass $B$) is never used by the FSM and has been dropped.
+
+\begin{figure}[H]
+    \centering
+    \begin{tikzpicture}[dp]
+        % operand swap
+        \pic (M1) at (-1.3,1.2) {muxd};
+        \pic (M2) at (1.3,1.2)  {muxd};
+        \draw[bus] ($(M1-in1)+(0,0.5)$) node[above,sig]{A} -- (M1-in1);
+        \draw[bus] ($(M1-in2)+(0,0.5)$) node[above,sig]{B} -- (M1-in2);
+        \draw[bus] ($(M2-in1)+(0,0.5)$) node[above,sig]{B} -- (M2-in1);
+        \draw[bus] ($(M2-in2)+(0,0.5)$) node[above,sig]{A} -- (M2-in2);
+        \draw[ctl] ($(M1-sl)+(-0.8,0)$) node[left,sig]{FN(0)} -- (M1-sl);
+        \draw[ctl] ($(M2-sr)+(0.8,0)$) node[right,sig]{FN(0)} -- (M2-sr);
+        % single subtractor
+        \pic (S) at (0,-0.6) {aluv};
+        \node[sig] at (S-c) {$in1-in2$};
+        \draw[bus] (M1-out) -- ++(0,-0.4) node[left,sig,pos=0.5]{in1} -| (S-a);
+        \draw[bus] (M2-out) -- ++(0,-0.4) node[right,sig,pos=0.5]{in2} -| (S-b);
+        % pass-through multiplexer
+        \pic (P) at (0.35,-2.1) {muxd};
+        \draw[bus] (S-y) -- (P-in1);
+        \draw[bus] ($(P-in2)+(0,0.4)$) node[above,sig]{A} -- (P-in2);
+        \draw[ctl] ($(P-sl)+(-1.0,0)$) node[left,sig]{FN(1)} -- (P-sl);
+        % result and flags
+        \draw[bus] (P-out) -- ++(0,-0.9) node[below,sig]{Y[16:0]};
+        \node[jdot] at (0.35,-2.85) {};
+        \node[dpbox] (FL) at (2.0,-2.85) {flags};
+        \draw[bus] (0.35,-2.85) -- (FL.west);
+        \draw[ctl] (FL.east) -- ++(0.6,0) node[right,sig]{Z, N};
+    \end{tikzpicture}
+    \caption{ALU of the resource-optimized variant (\code{fsmd\_resource\_optimized}).}
+    \label{fig:t3_alu_res}
+\end{figure}
+
+\paragraph{Time-optimized variant.}
+The second variant (\code{task3/gcd\_time\_optimizations.vhd}) deliberately describes two subtractors (Figure~\ref{fig:t3_alu_time}). The differences \code{out1}~$=A-B$ and \code{out2}~$=B-A$ are computed in the same clock cycle, and the sign $N$ of \code{out1} selects the non-negative one: the ALU output $Y$ is thus always $|A-B|$, and $Z$, computed from \code{out1}, is 1 exactly when $A=B$. As a consequence, the FSM no longer needs separate states to perform the subtraction: in \code{CHECK\_ZERO} it loads $Y$ into \code{RegA} (when $N=0$) or into \code{RegB} (when $N=1$) and returns to \code{COMPUTE}, so the states \code{POS} and \code{NEG} are removed (Figure~\ref{fig:t3_fsm_time}). \code{FN} is reduced to a single bit, which is 1 only in \code{DONE}, where both units pass $A$ to the output. The FSM of this variant is a mixed Moore/Mealy machine: the outputs written inside the states (\code{ABorALU}, \code{ack}, \code{FN} and the loads in \code{FIRST\_HS} and \code{SECOND\_HS}) are Moore outputs, while \code{LDA} and \code{LDB}, written on the transitions leaving \code{CHECK\_ZERO}, are Mealy outputs, since they depend on both the current state and the flags $Z$ and $N$.
+
+
+\begin{figure}[H]
+    \centering
+    \begin{tikzpicture}[dp]
+        % two subtractors working in parallel
+        \pic (S1) at (-1.4,0) {aluv};
+        \pic (S2) at (1.4,0)  {aluv};
+        \node[sig] at (S1-c) {$A-B$};
+        \node[sig] at (S2-c) {$B-A$};
+        \draw[bus] ($(S1-a)+(0,0.5)$) node[above,sig]{A} -- (S1-a);
+        \draw[bus] ($(S1-b)+(0,0.5)$) node[above,sig]{B} -- (S1-b);
+        \draw[bus] ($(S2-a)+(0,0.5)$) node[above,sig]{B} -- (S2-a);
+        \draw[bus] ($(S2-b)+(0,0.5)$) node[above,sig]{A} -- (S2-b);
+        \draw[ctl] ($(S1-l)+(-0.6,0)$) node[left,sig]{FN} -- (S1-l);
+        \draw[ctl] ($(S2-r)+(0.6,0)$) node[right,sig]{FN} -- (S2-r);
+        % result multiplexer controlled by the sign of out1
+        \pic (R) at (0,-1.9) {muxd};
+        \draw[bus] (S1-y) -- ++(0,-0.5) -| (R-in1);
+        \draw[bus] (S2-y) -- ++(0,-0.5) -| (R-in2);
+        \node[sig, right] at (-1.4,-0.62) {out1};
+        \node[sig, left]  at (1.4,-0.62)  {out2};
+        % flags computed from out1
+        \node[jdot] at (-1.4,-0.9) {};
+        \node[dpbox] (FL) at (-2.9,-0.9) {flags};
+        \draw[bus] (-1.4,-0.9) -- (FL.east);
+        \draw[ctl] (FL.south) |- node[pos=0.75, above, sig]{N} (R-sl);
+        \draw[ctl] (FL.west) -- ++(-0.5,0) node[left,sig]{Z, N};
+        \draw[bus] (R-out) -- ++(0,-0.8) node[below,sig]{Y[15:0]};
+    \end{tikzpicture}
+    \caption{ALU of the time-optimized variant (\code{fsmd\_time\_optimized}).}
+    \label{fig:t3_alu_time}
+\end{figure}
+
+
+\begin{figure}[H]
+    \centering
+    \begin{adjustbox}{max width=\linewidth}
+    \begin{tikzpicture}[
+        >={Stealth[round]},
+        every state/.style={draw, thick, minimum size=30mm, inner sep=1pt, font=\scriptsize, align=center},
+        every edge/.style={draw, ->, thick},
+        lbl/.style={font=\footnotesize, align=center},
+      ]
+        % states (outputs of each state are written inside the circles)
+        \node[state, initial above, initial text=] (RST) at (0,0) {\textbf{RST}};
+        \node[state] (FHS) at (5.4,0)     {\textbf{FIRST\_HS} \\[6pt]
+            \footnotesize ABorALU $=1$ \\ \footnotesize LDA $=1$};
+        \node[state] (AST) at (10.8,0)    {\textbf{A\_STORED} \\[6pt]
+            \footnotesize ack $=1$};
+        \node[state] (WU)  at (16.2,0)    {\textbf{WAIT\_USER}};
+        \node[state] (SHS) at (16.2,-5.2) {\textbf{SECOND\_HS} \\[6pt]
+            \footnotesize ABorALU $=1$ \\ \footnotesize LDB $=1$};
+        \node[state] (CMP) at (10.8,-5.2) {\textbf{COMPUTE}};
+        \node[state] (CHK) at (5.4,-5.2)  {\textbf{CHECK\_ZERO}};
+        \node[state] (DN)  at (0,-5.2)    {\textbf{DONE} \\[6pt]
+            \footnotesize ack $=1$ \\ \footnotesize FN $=1$};
+        % transitions
+        \path
+          (RST) edge[loop left]     node[lbl, left]  {req $=0$} ()
+          (RST) edge                node[lbl, above] {req $=1$} (FHS)
+          (FHS) edge                (AST)
+          (AST) edge[loop above]    node[lbl, above] {req $=1$} ()
+          (AST) edge                node[lbl, above] {req $=0$} (WU)
+          (WU)  edge[loop above]    node[lbl, above] {req $=0$} ()
+          (WU)  edge                node[lbl, right] {req $=1$} (SHS)
+          (SHS) edge                (CMP)
+          (CMP) edge                (CHK)
+          (CHK) edge[bend left=50]  node[lbl, above] {$Z=0$, $N=0$ / \\ LDA $=1$} (CMP)
+          (CHK) edge[bend right=50] node[lbl, below] {$Z=0$, $N=1$ / \\ LDB $=1$} (CMP)
+          (CHK) edge                node[lbl, above] {$Z=1$} (DN)
+          (DN)  edge[loop left]     node[lbl, left]  {req $=1$} ()
+          (DN)  edge                node[lbl, right] {req $=0$} (RST);
+    \end{tikzpicture}
+    \end{adjustbox}
+    \caption{State diagram of the time-optimized variant.}
+    \label{fig:t3_fsm_time}
+\end{figure}
+
+
+\paragraph{Combined variant.}
+
+The third variant (\code{task3/gcd\_res\_time\_optimizations.vhd}) keeps the two-state loop of Figure~\ref{fig:t3_fsm_time}, but computes both differences with one subtractor used in two consecutive clock cycles (Figure~\ref{fig:t3_alu_comb}). The FSM is the same as in the time-optimized variant, with two differences (Figure~\ref{fig:t3_fsm_comb}). First, the branch condition in \code{CHECK\_ZERO} is evaluated on the registered sign \code{ctrl\_switch} instead of the combinational sign $N$; secondly, the FSM asserts an additional output \code{ctrl\_switch\_en} in \code{COMPUTE}. The operand swap is controlled by the one-bit register \code{ctrl\_switch}, which holds the sign of $A-B$ calculated in \texttt{COMPUTE}. The two states of the loop then behave as follows:
+\begin{itemize}
+    \item in \code{COMPUTE}, \code{ctrl\_switch} is 0, so the subtractor computes $A-B$; at the end of the cycle its sign $N$ is stored in \code{ctrl\_switch}, since the FSM asserts \code{ctrl\_switch\_en} only in this state;
+    \item in \code{CHECK\_ZERO}, the operands are swapped whenever $A<B$, so the subtractor produces $|A-B|$. As in the time-optimized variant, $Z=1$ terminates the loop; otherwise, the difference is written to \code{RegB}, if \code{ctrl\_switch}~$=1$, or to \code{RegA} otherwise, and \code{ctrl\_switch} is cleared again;
+    \item in \code{DONE}, \code{ctrl\_switch}~$=0$ and \code{FN}~$=1$, so the unit passes \code{RegA} to the output.
+\end{itemize}
+The sign has to be stored in a flip-flop because it cannot be used combinationally: $N$ would control the swap multiplexers while being computed from their outputs, closing a combinational loop. This is why the variant needs two cycles per iteration, like the time-optimized one, but only half of its subtractors.
+
+
+
+\begin{figure}[H]
+    \centering
+    \begin{tikzpicture}[dp]
+        % operand swap (cl_switch): in1/in2 <= reg_a/reg_b, or reg_b/reg_a when ctrl_switch = '1'
+        \pic (M1) at (-1.3,1.2) {muxd};
+        \pic (M2) at (1.3,1.2)  {muxd};
+        \draw[bus] ($(M1-in1)+(0,0.5)$) node[above,sig]{A} -- (M1-in1);
+        \draw[bus] ($(M1-in2)+(0,0.5)$) node[above,sig]{B} -- (M1-in2);
+        \draw[bus] ($(M2-in1)+(0,0.5)$) node[above,sig]{B} -- (M2-in1);
+        \draw[bus] ($(M2-in2)+(0,0.5)$) node[above,sig]{A} -- (M2-in2);
+        % single subtractor / pass-through (cl_calc): Y <= in1 - in2 when FN = '0', in1 when FN = '1'
+        \pic (S) at (0,-0.6) {aluv};
+        \node[sig] at (S-c) {$in1-in2$};
+        \draw[bus] (M1-out) -- ++(0,-0.4) node[left,sig,pos=0.5]{in1} -| (S-a);
+        \draw[bus] (M2-out) -- ++(0,-0.4) node[right,sig,pos=0.5]{in2} -| (S-b);
+        \draw[ctl] ($(S-l)+(-0.8,0)$) node[left,sig]{FN} -- (S-l);
+        \draw[bus] (S-y) -- ++(0,-1.4) node[below,sig]{Y[16:0]};
+        % flags (cl_eval and N <= Y(16))
+        \node[jdot] at (0,-1.5) {};
+        \node[dpbox] (FL) at (2.0,-1.5) {flags};
+        \draw[bus] (0,-1.5) -- (FL.west);
+        \draw[ctl] (FL.east) -- ++(0.6,0) node[right,sig]{Z};
+        % ctrl_switch register (seq_switch): loads N only when the FSM is in COMPUTE, else cleared
+        \node[dpbox, minimum width=6mm] (AND) at (2.0,-2.4) {\&};
+        \draw[ctl] (FL.south) -- node[left,sig]{N} (AND.north);
+        \draw[ctl] ($(AND.east)+(0.8,0)$) node[right,sig]{ctrl\_switch\_en} -- (AND.east);
+        \node[dpreg] (CS) at (2.0,-3.4) {ctrl\_switch};
+        \dpclk{CS}
+        \draw[ctl] (AND.south) -- (CS.north);
+        % the ctrl_switch output is a single net: it exits on the left of the register
+        % and splits as soon as it reaches the left mux -- one branch enters that mux
+        % directly, the other runs above both muxes into the right side of the right one
+        \draw[thin] (CS.west) -- (-2.6,-3.4) -- (-2.6,1.2) coordinate (CSbranch);
+        \node[sig,left] at (-2.6,-1.0) {ctrl\_switch};
+        \node[jdot] at (CSbranch) {};
+        \draw[ctl] (CSbranch) -- (M1-sl);
+        \draw[thin] (CSbranch) -- (-2.6,2.6) -- (2.6,2.6) -- (2.6,1.2) coordinate (CStop);
+        \draw[ctl] (CStop) -- (M2-sr);
+    \end{tikzpicture}
+    \caption{ALU of the combined variant (\code{fsmd\_res\_time\_optimized}).}
+    \label{fig:t3_alu_comb}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \begin{adjustbox}{max width=\linewidth}
+    \begin{tikzpicture}[
+        >={Stealth[round]},
+        every state/.style={draw, thick, minimum size=30mm, inner sep=1pt, font=\scriptsize, align=center},
+        every edge/.style={draw, ->, thick},
+        lbl/.style={font=\footnotesize, align=center},
+      ]
+        % states (outputs of each state are written inside the circles)
+        \node[] (SHS) at (16.2,-5.2) {\scriptsize \textbf{SECOND\_HS}};
+        \node[state] (CMP) at (10.8,-5.2) {\textbf{COMPUTE} \\[6pt]
+            \footnotesize ctrl\_switch\_en $=1$};
+        \node[state] (CHK) at (5.4,-5.2)  {\textbf{CHECK\_ZERO}};
+        \node[] (DN)  at (0,-5.2)    {\scriptsize \textbf{DONE}};
+        % transitions
+        \path
+          (SHS) edge                (CMP)
+          (CMP) edge                (CHK)
+          (CHK) edge[bend left=50]  node[lbl, above] {$Z=0$, ctrl\_switch$=0$ / \\ LDA $=1$} (CMP)
+          (CHK) edge[bend right=50] node[lbl, below] {$Z=0$, ctrl\_switch$=1$ / \\ LDB $=1$} (CMP)
+          (CHK) edge                node[lbl, above] {$Z=1$} (DN);
+    \end{tikzpicture}
+    \end{adjustbox}
+    \caption{Computation state diagram of the combined variant.}
+    \label{fig:t3_fsm_comb}
+\end{figure}
+
+\subsection{Results and discussion}
+
+Table~\ref{tab:t3_results} summarizes the synthesis results reported by Vivado for the \code{gcd} module and the simulated time needed by \code{gcd\_tb}, together with the number of clock cycles from \code{COMPUTE} to \code{DONE} as a function of the number $k$ of subtraction steps performed by Euclid's algorithm. 
+
+\begin{table}[H]
+    \centering
+    \small
+    \begin{tabular}{lccccccc}
+        \toprule
+        Variant & Subtractors & LUTs & FFs & \makecell{Cycles\\per GCD} & \makecell{Simulated\\time [ms]} \\
+        \midrule
+        Baseline (Task 2)  & 2 & 69 & 36 & $3k+2$ & 47.72 \\
+        Resource-optimized & 1 & 53 & 36 & $3k+2$ & 47.72 \\
+        Time-optimized     & 2 & 75 & 35 & $2k+2$ & 33.95 \\
+        Combined           & 1 & 66 & 36 & $2k+2$ & 33.95 \\
+        \bottomrule
+    \end{tabular}
+    \caption{Comparison of the Task~2 baseline and the three optimized variants. The simulated time is the time needed by \code{gcd\_tb} to process its 10\,000 operand pairs.}
+    \label{tab:t3_results}
+\end{table}
+
+\paragraph{Resource optimization.}
+The shared subtractor saves 16 LUTs ($-23\%$); although removing a 17-bit subtractor eliminates 17 arithmetic stages, minor control logic and synthesis packing variations account for the net 16 LUT difference. Meanwhile, the number of flip-flops and the simulated time are unchanged, as expected from the unchanged FSM. Among all our designs, this is the one closest to the estimate of Task~0b.
+
+\paragraph{Time optimization.}
+Removing \code{POS} and \code{NEG} reduces the simulated time by 28.9\%, from 47\,720\,260~ns to 33\,946\,880~ns. With a 20~ns clock period, these correspond to 2\,386\,013 and 1\,697\,344 clock cycles for the 10\,000 operand pairs. The downside of this implementation is that it significantly increases the area of the circuit: the number of LUTs increased to 75, whereas the number of FFs decreased by one. 
+
+\paragraph{Combined optimization.}
+Combining the two optimization strategies resulted in a circuit as performant as the time-optimized variant. Contrary to our expectations, the number of synthesized LUTs was not close to the resource-optimized variant. This discrepancy stems from the complexity of the ALU operand-switching logic; still, the resulting area was slightly smaller than the original design (66 vs 69 LUTs, whereas the number of flip-flops remains unchanged).
+

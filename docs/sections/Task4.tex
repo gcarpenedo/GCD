@@ -1,0 +1,140 @@
+% ===========================================================================
+%  Task 4 -- Low-level component-based implementation (optional)
+%  Uses the helpers (\tbd, dp/bus/ctl/sig styles, muxd/aluv pics, \dpclk)
+%  defined at the top of Task3.tex.
+% ===========================================================================
+\section{Low-Level Component-Based Implementation - Task 4}
+
+As the last (optional) step, we described the GCD module structurally: a 2-to-1 multiplexer (\code{mux}), a buffer (\code{buf}), a register with enable (\code{reg}) and the ALU of Table~\ref{tab:alu_gcd} (\code{alu}). All components have a generic width that defaults to 16 bits; we kept this default for \code{mux}, \code{reg} and \code{buf}, while the ALU is instantiated with \code{W => 17}, so that the datapath computes the differences on 17 bits like the FSMD designs of Tasks~2 and~3.
+
+\subsection{Structural model}
+
+The new architecture \code{structural} of the entity \code{gcd} (file \code{task4/gcd\_module.vhd}) follows the partitioning suggested by the assignment: it contains only two component instances, the controller \code{u\_fsm} and the datapath \code{u\_datapath}, connected by the control signals \code{ABorALU}, \code{LDA}, \code{LDB}, \code{FN} and by the status flags \code{Z} and \code{N} (Figure~\ref{fig:t4_structural}):
+\begin{itemize}
+    \item The \textbf{controller} is the entity \code{FSM} (file \code{task4/fsm.vhd}). Its architecture \code{behaviour} is the FSM of Task~2, still written with the two-process template (combinational process \code{cl\_fsm} and register process \code{seq}). It now only generates the control signals \code{ABorALU}, \code{LDA}, \code{LDB} and \code{FN} and the handshake output \code{ack}; its register process contains only the state register, since \code{RegA} and \code{RegB} have become component instances in the datapath.
+    \item The \textbf{datapath} is the entity \code{datapath} (file \code{task4/datapath.vhd}). Its architecture \code{structural} declares the four components with the same generics and ports as in \code{comp.vhd} and consists of the six component instances of Table~\ref{tab:t4_instances}, connected by internal signals.
+\end{itemize}
+
+\begin{table}[H]
+    \centering
+    \small
+    \begin{tabular}{llll}
+        \toprule
+        Instance & Component & Inputs & Output \\
+        \midrule
+        \code{u\_mux}    & \code{mux} & \code{AB} (s = 0), \code{alu\_out(16:1)} (s = 1), s = \code{ABorALU} & \code{mux\_out} \\
+        \code{u\_reg\_a} & \code{reg} & \code{mux\_out}, en = \code{LDA} & \code{reg\_a} \\
+        \code{u\_reg\_b} & \code{reg} & \code{mux\_out}, en = \code{LDB} & \code{reg\_b} \\
+        \code{u\_alu}    & \code{alu} (\code{W => 17}) & A = \code{'0' \& reg\_a}, B = \code{'0' \& reg\_b}, fn = \code{FN} & \code{alu\_out}, \code{Z}, \code{N} \\
+        \code{u\_Cmux}   & \code{mux} & 0 (s = 0), \code{mux\_out} (s = 1), s = \code{FN(1)} & \code{C\_mid} \\
+        \code{u\_buf}    & \code{buf} & \code{C\_mid} & \code{C} (output port) \\
+        \bottomrule
+    \end{tabular}
+    \caption{Component instances of the structural datapath (entity \code{datapath}).}
+    \label{tab:t4_instances}
+\end{table}
+
+
+Three details differ from the FSMD version of Task~2:
+\begin{itemize}
+    \item The provided \code{mux} selects \code{data\_in1} when \code{s = '0'}. We therefore connected \code{AB} to \code{data\_in1}, so the polarity of \code{ABorALU} is inverted with respect to Task~2: 0 loads the operand from \code{AB}, 1 loads the ALU result.
+    \item In the FSMD designs the output \code{C} is 0 except in \code{DONE}. To reproduce this behaviour with the available components, a second multiplexer, \code{u\_Cmux}, selects between the constant 0 and \code{mux\_out} under the control of \code{FN(1)}, which is 1 only in \code{DONE}. In that state the FSM sets \code{FN = 10} and \code{ABorALU = 1}, so that \code{mux\_out} carries \code{RegA}. The buffer \code{u\_buf} then drives the output port, like the buffer in Figure~\ref{fig:basic-fsmd}.
+    \item The \code{reg} component has no reset input, so \code{RegA} and \code{RegB} are undefined after reset. This is harmless, because both registers are always loaded in \code{FIRST\_HS} and \code{SECOND\_HS} before being used.
+\end{itemize}
+The split into two entities only affects how the description is organized: since Vivado flattens the hierarchy during synthesis, it would not be expected to change the resulting circuit with respect to a single architecture body.
+
+\begin{figure}[H]
+    \centering
+    \begin{adjustbox}{max width=\linewidth}
+    \begin{tikzpicture}[dp, inst/.style={font=\scriptsize\itshape}]
+        % ---------- entity boundary (gcd) ----------
+        \draw[dashed] (-7.2,-2.1) rectangle (7.2,4.4);
+        \node[font=\small\itshape, anchor=south west] at (-7.2,4.4) {gcd (architecture structural)};
+        % ---------- datapath boundary (u_datapath) ----------
+        \draw[densely dotted] (-3.6,-1.85) rectangle (6.9,4.25);
+        \node[inst, anchor=north west] at (-3.6,4.25) {u\_datapath (entity datapath)};
+        % ---------- controller (u_fsm) ----------
+        \node[draw, thick, minimum width=16mm, minimum height=44mm, align=center] (FSM) at (-6.0,1.3)
+            {\textbf{FSM}\\[1mm]\scriptsize\itshape u\_fsm\\[1mm]\scriptsize processes\\\scriptsize cl\_fsm, seq};
+        \draw[ctl] (-7.6,2.6) node[left,sig]{req} -- (-6.8,2.6);
+        \draw[ctl] (-6.8,1.8) -- (-7.6,1.8) node[left,sig]{ack};
+        \foreach \y/\sname in {3.0/ABorALU, 2.4/LDA, 1.8/LDB, 1.2/{FN[1:0]}}
+            \draw[ctl] (-5.2,\y) -- node[above,sig]{\sname} (-3.6,\y);
+        \draw[ctl] (-3.6,0.2)  -- node[above,sig]{Z} (-5.2,0.2);
+        \draw[ctl] (-3.6,-0.3) -- node[above,sig]{N} (-5.2,-0.3);
+        % ---------- u_mux ----------
+        \pic (MX) at (0,3.2) {muxd};
+        \node[inst, right] at (MX-sr) {u\_mux};
+        \draw[bus] (-0.35,5.0) node[above,sig]{AB[15:0]} -- (MX-in1);
+        \draw[ctl] ($(MX-sl)+(-0.9,0)$) node[left,sig]{ABorALU} -- (MX-sl);
+        \draw[bus] (MX-out) -- (0,2.4);
+        \node[jdot] at (0,2.4) {};
+        \node[sig, above right] at (0.05,2.4) {mux\_out};
+        % ---------- registers ----------
+        \node[dpreg] (RA) at (-1.2,1.4) {\itshape u\_reg\_a};
+        \node[dpreg] (RB) at (1.2,1.4)  {\itshape u\_reg\_b};
+        \dpclk{RA}
+        \dpclk{RB}
+        \draw[bus] (0,2.4) -| (RA.north);
+        \draw[bus] (0,2.4) -| (RB.north);
+        \node[jdot] at (1.2,2.4) {};
+        \draw[ctl] ($(RA.west)+(-0.6,0)$) node[left,sig]{LDA} -- (RA.west);
+        \draw[ctl] ($(RB.east)+(0.6,0)$) node[right,sig]{LDB} -- (RB.east);
+        % ---------- ALU ----------
+        \pic (U) at (0,-0.4) {aluv};
+        \node[inst] at (U-c) {u\_alu};
+        \draw[bus] (RA.south) -- ++(0,-0.45) node[left,sig,pos=0.5]{0\,\&\,reg\_a} -| (U-a);
+        \draw[bus] (RB.south) -- ++(0,-0.45) node[right,sig,pos=0.5]{0\,\&\,reg\_b} -| (U-b);
+        \draw[ctl] ($(U-l)+(-0.9,0)$) node[left,sig]{FN[1:0]} -- (U-l);
+        \draw[ctl] (U-r) -- ++(0.8,0) node[right,sig]{Z, N};
+        % ---------- feedback alu_out -> u_mux ----------
+        \draw[bus] (U-y) -- (0,-1.4) -| (3.6,4.1) -| (MX-in2);
+        \node[sig, below] at (1.8,-1.4) {alu\_out(16:1)};
+        % ---------- output path: u_Cmux and u_buf ----------
+        \pic (CM) at (5.4,1.4) {muxd};
+        \node[inst, left] at (CM-sl) {u\_Cmux};
+        \draw[bus] (0,2.4) -| (CM-in2);
+        \draw[bus] (5.05,2.1) node[left,sig]{0} -- (CM-in1);
+        \draw[ctl] ($(CM-sr)+(0.7,0)$) node[above,sig]{FN(1)} -- (CM-sr);
+        \draw[bus] (CM-out) -- node[left,sig]{C\_mid} (5.4,0.5);
+        \draw[thick] (5.1,0.5) -- (5.7,0.5) -- (5.4,0.0) -- cycle;
+        \node[inst, right] at (5.7,0.3) {u\_buf};
+        \draw[bus] (5.4,0.0) -- (5.4,-2.4) node[below,sig]{C[15:0]};
+    \end{tikzpicture}
+    \end{adjustbox}
+    \caption{Structural implementation of the GCD module (architecture \code{structural}): the controller \code{u\_fsm} (entity \code{FSM}) and the datapath \code{u\_datapath} (entity \code{datapath}).}
+    \label{fig:t4_structural}
+\end{figure}
+
+\subsection{Simulation}
+
+The structural design was simulated with the same testbench as in Tasks~2 and~3, after selecting \code{structural} in \code{gcd\_top}. As the FSM is identical to the one of Task~2, the design needs the same number of clock cycles ($3k+2$ per GCD), and the simulation ends at the same time as the baseline, 47\,720\,260~ns.
+
+\subsection{Synthesis}
+
+
+Synthesizing \code{gcd\_top} with the structural architecture gives 67 LUTs and 36 flip-flops for the \code{gcd} module. The flip-flops are the $2\times16$ of \code{u\_reg\_a} and \code{u\_reg\_b} plus the 4-bit state register. The synthesis report lists two adders (the subtractions $A-B$ and $B-A$ described in the behavioural architecture of the \code{alu} component being implemented as two's-complement additions).
+
+\subsection{Comparison with the FSMD-based designs}
+
+\begin{table}[H]
+    \centering
+    \begin{tabular}{llcc}
+        \toprule
+        Design & Architecture & LUTs & FFs \\
+        \midrule
+        Task 2, FSMD baseline      & \code{fsmd}                      & 69 & 36 \\
+        Task 3, resource-optimized & \code{fsmd\_resource\_optimized}  & 53 & 36 \\
+        Task 3, time-optimized     & \code{fsmd\_time\_optimized}      & 75 & 35 \\
+        Task 3, combined           & \code{fsmd\_res\_time\_optimized} & 66 & 36 \\
+        Task 4, structural         & \code{structural}                & 67 & 36 \\
+        \bottomrule
+    \end{tabular}
+    \caption{Resources used by the \code{gcd} module in the different implementations.}
+    \label{tab:t4_comparison}
+\end{table}
+
+
+Table~\ref{tab:t4_comparison} compares the size of all our designs. Although the structural datapath is, component by component, the datapath of Figure~\ref{fig:basic-fsmd}, this does not make it smaller: the \code{alu} component is itself a behavioural description containing two subtractors, exactly like the ALU of the Task~2 baseline, and Vivado flattens the hierarchy and optimizes the resulting netlist in the same way as for the FSMD description. The structural design is therefore about as large as the baseline (67 vs.\ 69 LUTs, both 36 flip-flops), and clearly larger than the resource-optimized FSMD variant of Task~3 (53 LUTs), which remains our smallest design.
+
+In our case the structural design did not pay off: it required considerably more code (component declarations, port maps, an additional multiplexer for the output and inverted control polarities) without improving area or speed.

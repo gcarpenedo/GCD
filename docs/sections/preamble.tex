@@ -1,0 +1,157 @@
+\usepackage[utf8]{inputenc}
+\usepackage[english]{babel}
+
+% Code formatting (enables appendix A)
+\usepackage[procnames]{listings}
+\usepackage[table, xcdraw, dvipsnames]{xcolor}
+% \usepackage{minted} % disabled: unused (code uses lstlisting) and it calls Python at every compile -> Overleaf timeout
+\definecolor{backcolour}{rgb}{0.95,0.95,0.95}
+\lstset{language=VHDL,
+numberstyle=\tiny\color{Blue},
+keywordstyle=\color{Orchid},
+commentstyle=\color{OliveGreen},
+stringstyle=\color{orange},
+tabsize=2,
+basicstyle=\ttfamily,
+belowskip=1ex,
+breaklines=true,
+columns=fullflexible,
+framerule=0pt,
+numbers=left
+}
+\def\code#1{\texttt{#1}}
+
+% Referencer -- disabled: no \cite in the report and bibliography.bib does not exist,
+% but loading biblatex makes Overleaf run biber (and an extra pass) at every compile
+% \usepackage{biblatex}
+% \addbibresource{bibliography.bib}
+
+\usepackage{algpseudocode}
+\usepackage{algorithm}
+
+\usepackage{gensymb}
+\usepackage{authblk}
+\usepackage{multirow}
+\usepackage{multicol}
+\setlength{\columnsep}{1cm}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{subfiles}
+\usepackage[dvipsnames]{xcolor}
+% \usepackage[margin=0.8in]{geometry}
+\usepackage{enumerate}
+\usepackage{amsmath}
+\usepackage[T1]{fontenc}
+\usepackage{longtable}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{graphicx}               % Necessary to use \scalebox
+\usepackage{amsmath,amssymb}
+\usepackage{lipsum}
+\usepackage{setspace}
+%\usepackage[landscape]{geometry}% http://ctan.org/pkg/geometry
+\usepackage{fourier} 
+\usepackage{array}
+\usepackage{makecell}
+\usepackage{tocloft}
+\usepackage{fancyhdr}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,calc,automata,fit} % used by the drawings of Task 3 and Task 4
+\graphicspath{{images/}{figures/}{schematics/}{mugshots/}}
+\setlength\parindent{0pt}
+\usepackage{textcomp} %for underscore-tegn
+\usepackage{titlesec}
+\setcounter{secnumdepth}{4}
+\usepackage{tikz}
+\def\checkmark{\tikz\fill[scale=0.4](0,.35) -- (.25,0) -- (1,.7) -- (.25,.15) -- cycle;}
+\usepackage{amssymb}% http://ctan.org/pkg/amssymb
+\usepackage{pifont}% http://ctan.org/pkg/pifont
+\newcommand{\cmark}{\ding{51}}%
+\newcommand{\xmark}{\ding{55}}%
+\usepackage[final]{pdfpages}
+            %\renewcommand{\figurename}{Figure}
+\usepackage[figurename=Figure]{caption}
+\usepackage{hyperref}
+            %\usepackage{cleveref}
+\usepackage[noabbrev]{cleveref}
+\hypersetup{
+    colorlinks,
+    citecolor=black,
+    filecolor=black,
+    linkcolor=black,
+    urlcolor=black
+}
+\titleformat{\paragraph}
+{\normalfont\normalsize\bfseries}{\theparagraph}{1em}{}
+\titlespacing*{\paragraph}
+{0pt}{3.25ex plus 1ex minus .2ex}{1.5ex plus .2ex}
+
+\setlength{\parindent}{0pt} % Prevents automatic indentation 
+
+%Code formatting stuff
+%\definecolor{backcolour}{rgb}{0.95,0.95,0.95}  
+\def\code#1{\texttt{#1}}
+
+%\usepackage{geometry}
+% \geometry{
+% a4paper,
+% total={170mm,257mm},
+% left=20mm,
+% top=25mm,
+% }
+\usepackage{geometry}
+\geometry{
+  a4paper,
+  margin=1in
+}
+\usepackage[utf8]{inputenc}
+
+\usepackage[procnames]{listings}
+\usepackage{float}
+\usepackage{array}
+\usepackage{tikz}
+\usepackage{color}
+\usepackage[titletoc,title]{appendix}
+\usepackage[utf8]{inputenc}
+\def\doubleunderline#1{\underline{\underline{#1}}}
+\usepackage{hyperref}
+\usepackage{fancyhdr}
+\usepackage{ulem}
+\usepackage{amsmath}
+\usepackage{dsfont}
+\usepackage{graphicx,wrapfig,lipsum}
+\usepackage{scrextend}
+\usepackage{listings}
+\usepackage{epstopdf}
+\usepackage{blindtext}
+\usepackage{pdfpages}
+\usepackage{graphicx}
+\usepackage{multirow}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{subcaption}
+\usepackage{makecell}
+\usepackage{booktabs}
+\usepackage{wrapfig}
+\usepackage{xcolor}
+\usepackage{siunitx}
+\usepackage{adjustbox}
+\usepackage{multicol}
+\usepackage{subfiles}
+%\usepackage{tikz}
+\usepackage[T1]{fontenc}
+% packages for margins 
+%\usepackage[margin = 1.0 in]{geometry}
+\renewcommand{\baselinestretch}{1.25}
+\usepackage{commath}
+\usepackage[nottoc]{tocbibind} %Adds "References" to the table of contents
+%\captionsetup[subfigure]{labelformat=empty}
+
+%added in for bibliography and citations
+\usepackage{comment}
+\usepackage{csquotes}
+
+\usepackage{tikz}
+\usepackage{adjustbox}
+\usepackage{float}   % per [H]
+\usetikzlibrary{automata, positioning, arrows.meta}

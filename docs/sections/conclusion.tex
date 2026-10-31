@@ -1,0 +1,8 @@
+% ===========================================================================
+%  Conclusion
+% ===========================================================================
+\section{Conclusion}
+
+This assignment took us through a complete top-down design flow: starting from an executable specification and its testbench, we refined the GCD module into an RT-level FSMD description, verified it by reusing the same testbench, synthesized it and ran it on the Nexys~A7~100T board, and finally explored optimizations and a structural implementation. Reusing one self-checking testbench with 10\,000 random operand pairs at every step made each refinement safe and gave directly comparable cycle counts. The optimizations showed that synthesis builds exactly the operators written in the HDL code, so area and speed are decided by how the RT-level description is written: sharing one subtractor saved 23\% of the LUTs, computing both differences in parallel reduced each iteration from three to two clock cycles (29\% less simulated time) at the cost of area, and combining the two ideas with a one-bit sign register gave the best trade-off. Finally, the structural implementation confirmed that describing the datapath as interconnected components brings no advantage over a well-written FSMD description when the components are themselves synthesized from behavioural code.
+
+% Maybe we coudl talk about the tradeoff between optimizing resources and speed (res -> less luts, slower; speed -> more luts, faster; both -> same luts, faster).
