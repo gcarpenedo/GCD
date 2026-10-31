@@ -1,0 +1,55 @@
+# Local Vivado workspaces. Keep all shared design sources at the repository root.
+/.vivado/
+
+# Vivado project infrastructure and generated directories.
+**/.Xil/
+**/*.cache/
+**/*.gen/
+**/*.hw/
+**/*.ip_user_files/
+**/*.runs/
+**/*.sim/
+**/*.srcs/
+**/managed_ip_project/
+
+# Vivado project metadata, logs, and transient files.
+*.xpr
+*.jou
+*.log
+*.str
+*.pb
+*.rpx
+*.wdb
+*.wcfg
+*.zip
+*.tmp
+
+# Generated implementation outputs.
+*.dcp
+*.bit
+*.bin
+*.mcs
+*.ltx
+*.hwdef
+*.hdf
+*.xsa
+
+# Editor and operating-system clutter.
+.DS_Store
+.vscode/
+*.aux
+*.fdb_latexmk
+*.fls
+*.synctex.gz
+*.swp
+*.out
+*~
+
+# Python virtual environments and caches.
+venv/
+.venv/
+__pycache__/
+*.pyc
+
+# Generated testbench data.
+test.txt
